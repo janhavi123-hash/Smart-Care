@@ -6,10 +6,10 @@ import {
   TextInput,
   ActivityIndicator,
   Platform,
-  Modal,
-  ScrollView,
+  Image,
+  Alert,
 } from "react-native";
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -17,61 +17,19 @@ import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import { Colors } from "@/constants/colors";
 
-function extractMedicineNameFromOCR(text: string): string {
-  const lines = text
-    .split(/[\n\r]+/)
-    .map((l) => l.trim())
-    .filter((l) => l.length > 2);
-
-  if (lines.length === 0) return "";
-
-  const medicineKeywords = /tablet|capsule|mg|ml|syrup|injection|cream|ointment|drops|patch|inhaler/i;
-  const nonMedKeywords = /lot|batch|exp|manufactured|stored|keep|children|caution|warning|directions|use|day|shake|refrig/i;
-
-  const candidates = lines.filter(
-    (l) =>
-      !nonMedKeywords.test(l) &&
-      l.length > 3 &&
-      l.length < 60 &&
-      !/^\d+$/.test(l)
-  );
-
-  const boldCandidates = candidates.filter(
-    (l) =>
-      /^[A-Z]/.test(l) &&
-      !medicineKeywords.test(l)
-  );
-
-  if (boldCandidates.length > 0) return boldCandidates[0];
-  if (candidates.length > 0) return candidates[0];
-  return lines[0];
-}
-
-function simulateOCRExtraction(imageUri: string): Promise<string> {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const examples = [
-        "Metformin Hydrochloride 500mg",
-        "Aspirin 100mg",
-        "Amlodipine 5mg",
-        "Lisinopril 10mg",
-        "Atorvastatin 20mg",
-      ];
-      const extracted = examples[Math.floor(Math.random() * examples.length)];
-      resolve(extracted);
-    }, 1200);
-  });
-}
+const API_BASE = process.env.EXPO_PUBLIC_DOMAIN
+  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
+  : "http://localhost:5000";
 
 function WebFallback() {
   const insets = useSafeAreaInsets();
   return (
     <View style={[styles.container, { paddingTop: insets.top + 20, backgroundColor: "#fff" }]}>
       <View style={styles.webFallback}>
-        <Ionicons name="scan-outline" size={64} color={Colors.textSecondary} />
-        <Text style={styles.webFallbackTitle}>OCR Not Available on Web</Text>
+        <Ionicons name="scan-outline" size={72} color={Colors.textSecondary} />
+        <Text style={styles.webFallbackTitle}>Scan Not Available on Web</Text>
         <Text style={styles.webFallbackText}>
-          Text scanning from medicine strips requires the mobile app. Please use Expo Go on your device.
+          Text scanning from medicine strips requires the Expo Go mobile app on your device.
         </Text>
         <Pressable style={styles.backBtn} onPress={() => router.back()}>
           <Text style={styles.backBtnText}>Go Back</Text>
@@ -84,60 +42,80 @@ function WebFallback() {
 function OCRScanner() {
   const insets = useSafeAreaInsets();
   const [isProcessing, setIsProcessing] = useState(false);
-  const [extractedText, setExtractedText] = useState("");
   const [editedName, setEditedName] = useState("");
   const [showResult, setShowResult] = useState(false);
   const [imageUri, setImageUri] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  async function processImage(uri: string, base64: string) {
+    setIsProcessing(true);
+    setErrorMsg("");
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+      const response = await fetch(`${API_BASE}/api/ocr`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64: base64 }),
+      });
+
+      if (!response.ok) throw new Error("Server error");
+      const data = await response.json();
+      const name = data.medicineName ?? "Unknown";
+
+      setEditedName(name === "Unknown" ? "" : name);
+      setShowResult(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      console.error(e);
+      setErrorMsg("Could not analyze the image. Please try again or type the name manually.");
+      setShowResult(true);
+      setEditedName("");
+    } finally {
+      setIsProcessing(false);
+    }
+  }
 
   async function handleCameraCapture() {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== "granted") {
+      Alert.alert("Permission needed", "Please allow camera access to scan medicine labels.");
       return;
     }
 
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.8,
+      base64: true,
       allowsEditing: false,
     });
 
     if (!result.canceled && result.assets[0]) {
-      const uri = result.assets[0].uri;
-      setImageUri(uri);
-      processImage(uri);
+      const asset = result.assets[0];
+      setImageUri(asset.uri);
+      setShowResult(false);
+      processImage(asset.uri, asset.base64 ?? "");
     }
   }
 
   async function handleGalleryPick() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") return;
+    if (status !== "granted") {
+      Alert.alert("Permission needed", "Please allow photo library access.");
+      return;
+    }
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.8,
+      base64: true,
     });
 
     if (!result.canceled && result.assets[0]) {
-      const uri = result.assets[0].uri;
-      setImageUri(uri);
-      processImage(uri);
-    }
-  }
-
-  async function processImage(uri: string) {
-    setIsProcessing(true);
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      const extracted = await simulateOCRExtraction(uri);
-      const medicineName = extractMedicineNameFromOCR(extracted);
-      setExtractedText(extracted);
-      setEditedName(medicineName);
-      setShowResult(true);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsProcessing(false);
+      const asset = result.assets[0];
+      setImageUri(asset.uri);
+      setShowResult(false);
+      processImage(asset.uri, asset.base64 ?? "");
     }
   }
 
@@ -147,120 +125,126 @@ function OCRScanner() {
         pathname: "/(tabs)/add",
         params: { scannedText: editedName.trim() },
       });
+    } else {
+      Alert.alert("No name", "Please type the medicine name before confirming.");
     }
+  }
+
+  function handleRetry() {
+    setShowResult(false);
+    setImageUri(null);
+    setEditedName("");
+    setErrorMsg("");
   }
 
   return (
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <Pressable style={styles.closeBtn} onPress={() => router.back()}>
-          <Ionicons name="close" size={22} color={Colors.text} />
+          <Ionicons name="close" size={26} color={Colors.text} />
         </Pressable>
-        <Text style={styles.headerTitle}>Scan Medicine Text</Text>
+        <Text style={styles.headerTitle}>Scan Medicine Label</Text>
       </View>
 
-      <ScrollView
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.illustrationBox}>
-          <View style={styles.medicineStrip}>
-            <View style={styles.stripCell} />
-            <View style={styles.stripCell} />
-            <View style={styles.stripCell} />
-            <View style={styles.stripCell} />
-            <View style={styles.stripCell} />
-          </View>
-          <View style={styles.scanLineAnim} />
-        </View>
+      <View style={styles.content}>
+        {!showResult && !isProcessing && (
+          <>
+            {imageUri ? (
+              <Image source={{ uri: imageUri }} style={styles.previewImage} resizeMode="contain" />
+            ) : (
+              <View style={styles.illustrationBox}>
+                <Ionicons name="scan-outline" size={72} color={Colors.primary} />
+                <Text style={styles.illustrationText}>AI will read the medicine name from your photo</Text>
+              </View>
+            )}
 
-        <Text style={styles.instructionTitle}>Scan Text from Medicine Strip</Text>
-        <Text style={styles.instructionText}>
-          Take a clear photo of the medicine packaging or strip. The app will automatically extract the medicine name.
-        </Text>
+            <Text style={styles.instructionTitle}>Take a Clear Photo</Text>
+            <Text style={styles.instructionText}>
+              Point your camera at the medicine name on the strip, bottle, or packaging. Make sure the text is sharp and well lit.
+            </Text>
 
-        {isProcessing ? (
+            <View style={styles.actionBtns}>
+              <Pressable
+                style={({ pressed }) => [styles.mainBtn, pressed && { opacity: 0.88 }]}
+                onPress={handleCameraCapture}
+              >
+                <Ionicons name="camera" size={26} color="#fff" />
+                <Text style={styles.mainBtnText}>Take Photo</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [styles.secondaryBtn, pressed && { opacity: 0.88 }]}
+                onPress={handleGalleryPick}
+              >
+                <Ionicons name="images-outline" size={24} color={Colors.primary} />
+                <Text style={styles.secondaryBtnText}>Choose from Gallery</Text>
+              </Pressable>
+            </View>
+          </>
+        )}
+
+        {isProcessing && (
           <View style={styles.processingBox}>
-            <ActivityIndicator size="large" color={Colors.primary} />
-            <Text style={styles.processingText}>Analyzing image...</Text>
-          </View>
-        ) : (
-          <View style={styles.actionBtns}>
-            <Pressable
-              style={({ pressed }) => [styles.mainBtn, pressed && { opacity: 0.88 }]}
-              onPress={handleCameraCapture}
-            >
-              <Ionicons name="camera" size={24} color="#fff" />
-              <Text style={styles.mainBtnText}>Take Photo</Text>
-            </Pressable>
-
-            <Pressable
-              style={({ pressed }) => [styles.secondaryBtn, pressed && { opacity: 0.88 }]}
-              onPress={handleGalleryPick}
-            >
-              <Ionicons name="images-outline" size={22} color={Colors.primary} />
-              <Text style={styles.secondaryBtnText}>Choose from Gallery</Text>
-            </Pressable>
+            {imageUri && (
+              <Image source={{ uri: imageUri }} style={styles.previewImageSmall} resizeMode="contain" />
+            )}
+            <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 24 }} />
+            <Text style={styles.processingTitle}>Analyzing Image...</Text>
+            <Text style={styles.processingText}>AI is reading the medicine label</Text>
           </View>
         )}
 
-        <View style={styles.tipBox}>
-          <Ionicons name="information-circle-outline" size={18} color={Colors.primary} />
-          <Text style={styles.tipText}>
-            For best results, ensure good lighting and hold the camera steady. The largest text on the strip is usually the medicine name.
-          </Text>
-        </View>
+        {showResult && (
+          <View style={styles.resultBox}>
+            {imageUri && (
+              <Image source={{ uri: imageUri }} style={styles.previewImageSmall} resizeMode="contain" />
+            )}
 
-        <View style={{ height: insets.bottom + 40 }} />
-      </ScrollView>
+            {errorMsg ? (
+              <View style={styles.errorBanner}>
+                <Ionicons name="warning-outline" size={20} color={Colors.danger} />
+                <Text style={styles.errorBannerText}>{errorMsg}</Text>
+              </View>
+            ) : (
+              <View style={styles.successBanner}>
+                <Ionicons name="checkmark-circle" size={20} color={Colors.taken} />
+                <Text style={styles.successBannerText}>Medicine name detected!</Text>
+              </View>
+            )}
 
-      <Modal visible={showResult} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.resultSheet, { paddingBottom: insets.bottom + 16 }]}>
-            <View style={styles.resultHandle} />
-            <View style={styles.resultHeader}>
-              <Ionicons name="checkmark-circle" size={28} color={Colors.taken} />
-              <Text style={styles.resultTitle}>Text Detected!</Text>
-            </View>
-
-            <Text style={styles.resultLabel}>Extracted Medicine Name</Text>
+            <Text style={styles.resultLabel}>Medicine Name</Text>
+            <Text style={styles.resultHint}>You can edit the name before confirming</Text>
             <TextInput
               style={styles.resultInput}
               value={editedName}
               onChangeText={setEditedName}
+              placeholder="Type or edit medicine name..."
+              placeholderTextColor={Colors.textTertiary}
               autoCapitalize="words"
-              multiline
+              autoFocus
             />
 
-            <Text style={styles.resultHint}>
-              Edit the name above if needed, then tap Use This Name.
-            </Text>
-
             <Pressable
-              style={({ pressed }) => [styles.useBtn, pressed && { opacity: 0.88 }]}
+              style={({ pressed }) => [styles.confirmBtn, pressed && { opacity: 0.88 }]}
               onPress={handleConfirm}
             >
-              <Ionicons name="checkmark" size={20} color="#fff" />
-              <Text style={styles.useBtnText}>Use This Name</Text>
+              <Ionicons name="checkmark" size={22} color="#fff" />
+              <Text style={styles.confirmBtnText}>Use This Name</Text>
             </Pressable>
-
             <Pressable
-              style={styles.retryBtn}
-              onPress={() => {
-                setShowResult(false);
-                setImageUri(null);
-              }}
+              style={({ pressed }) => [styles.retryBtn, pressed && { opacity: 0.88 }]}
+              onPress={handleRetry}
             >
+              <Ionicons name="refresh" size={20} color={Colors.primary} />
               <Text style={styles.retryBtnText}>Scan Again</Text>
             </Pressable>
           </View>
-        </View>
-      </Modal>
+        )}
+      </View>
     </View>
   );
 }
 
-export default function OCRScanScreen() {
+export default function OCRScreen() {
   if (Platform.OS === "web") return <WebFallback />;
   return <OCRScanner />;
 }
@@ -270,98 +254,85 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingBottom: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 14,
     borderBottomWidth: 1,
     borderBottomColor: Colors.borderLight,
     gap: 12,
   },
   closeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: Colors.borderLight,
     alignItems: "center",
     justifyContent: "center",
   },
   headerTitle: {
-    fontSize: 20,
-    fontFamily: "Nunito_700Bold",
+    fontSize: 22,
+    fontFamily: "Nunito_800ExtraBold",
     color: Colors.text,
   },
   content: {
+    flex: 1,
     padding: 20,
     alignItems: "center",
-    gap: 16,
   },
   illustrationBox: {
-    width: 200,
-    height: 80,
-    backgroundColor: Colors.borderLight,
-    borderRadius: 12,
-    justifyContent: "center",
+    width: "100%",
+    height: 180,
+    backgroundColor: Colors.primaryLight,
+    borderRadius: 20,
     alignItems: "center",
-    overflow: "hidden",
-    position: "relative",
-    marginTop: 8,
+    justifyContent: "center",
+    marginBottom: 24,
+    gap: 12,
   },
-  medicineStrip: {
-    flexDirection: "row",
-    gap: 8,
-    padding: 12,
+  illustrationText: {
+    fontSize: 16,
+    fontFamily: "Nunito_600SemiBold",
+    color: Colors.primary,
+    textAlign: "center",
+    paddingHorizontal: 20,
   },
-  stripCell: {
-    width: 28,
-    height: 28,
+  previewImage: {
+    width: "100%",
+    height: 200,
+    borderRadius: 16,
+    marginBottom: 20,
+    backgroundColor: Colors.borderLight,
+  },
+  previewImageSmall: {
+    width: "100%",
+    height: 140,
     borderRadius: 14,
-    backgroundColor: Colors.primary + "40",
-    borderWidth: 2,
-    borderColor: Colors.primary + "60",
-  },
-  scanLineAnim: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    height: 2,
-    backgroundColor: Colors.primary,
-    opacity: 0.7,
-    top: "50%",
+    marginBottom: 16,
+    backgroundColor: Colors.borderLight,
   },
   instructionTitle: {
     fontSize: 22,
     fontFamily: "Nunito_800ExtraBold",
     color: Colors.text,
     textAlign: "center",
+    marginBottom: 10,
   },
   instructionText: {
-    fontSize: 15,
+    fontSize: 17,
     fontFamily: "Nunito_400Regular",
     color: Colors.textSecondary,
     textAlign: "center",
-    lineHeight: 22,
+    lineHeight: 26,
+    marginBottom: 32,
   },
-  processingBox: {
-    alignItems: "center",
-    gap: 14,
-    padding: 24,
-  },
-  processingText: {
-    fontSize: 16,
-    fontFamily: "Nunito_600SemiBold",
-    color: Colors.textSecondary,
-  },
-  actionBtns: {
-    width: "100%",
-    gap: 12,
-  },
+  actionBtns: { width: "100%", gap: 12 },
   mainBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
     backgroundColor: Colors.primary,
-    borderRadius: 14,
-    height: 56,
+    borderRadius: 16,
+    height: 60,
     shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -369,7 +340,7 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   mainBtnText: {
-    fontSize: 17,
+    fontSize: 19,
     fontFamily: "Nunito_700Bold",
     color: "#fff",
   },
@@ -379,140 +350,157 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 10,
     backgroundColor: Colors.primaryLight,
-    borderRadius: 14,
-    height: 52,
+    borderRadius: 16,
+    height: 56,
     borderWidth: 1.5,
     borderColor: Colors.primary + "40",
   },
   secondaryBtnText: {
-    fontSize: 16,
+    fontSize: 17,
     fontFamily: "Nunito_700Bold",
     color: Colors.primary,
   },
-  tipBox: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    backgroundColor: Colors.primaryLight,
-    borderRadius: 14,
-    padding: 14,
-    gap: 10,
+  processingBox: {
+    flex: 1,
     width: "100%",
-  },
-  tipText: {
-    flex: 1,
-    fontSize: 13,
-    fontFamily: "Nunito_400Regular",
-    color: Colors.primary,
-    lineHeight: 19,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    justifyContent: "flex-end",
-  },
-  resultSheet: {
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 24,
-    gap: 12,
-  },
-  resultHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.border,
-    alignSelf: "center",
-    marginBottom: 8,
-  },
-  resultHeader: {
-    flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    justifyContent: "center",
   },
-  resultTitle: {
+  processingTitle: {
     fontSize: 22,
     fontFamily: "Nunito_800ExtraBold",
     color: Colors.text,
+    marginTop: 20,
+    textAlign: "center",
+  },
+  processingText: {
+    fontSize: 16,
+    fontFamily: "Nunito_400Regular",
+    color: Colors.textSecondary,
+    marginTop: 8,
+    textAlign: "center",
+  },
+  resultBox: {
+    width: "100%",
+  },
+  errorBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: Colors.dangerLight,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: "Nunito_600SemiBold",
+    color: Colors.danger,
+  },
+  successBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: Colors.successLight,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+  successBannerText: {
+    fontSize: 15,
+    fontFamily: "Nunito_600SemiBold",
+    color: Colors.taken,
   },
   resultLabel: {
-    fontSize: 14,
+    fontSize: 18,
     fontFamily: "Nunito_700Bold",
+    color: Colors.text,
+    marginBottom: 4,
+  },
+  resultHint: {
+    fontSize: 14,
+    fontFamily: "Nunito_400Regular",
     color: Colors.textSecondary,
+    marginBottom: 10,
   },
   resultInput: {
     backgroundColor: Colors.borderLight,
     borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
+    borderWidth: 2,
+    borderColor: Colors.primary,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    height: 56,
     fontSize: 18,
-    fontFamily: "Nunito_700Bold",
+    fontFamily: "Nunito_600SemiBold",
     color: Colors.text,
-    minHeight: 60,
+    marginBottom: 16,
   },
-  resultHint: {
-    fontSize: 13,
-    fontFamily: "Nunito_400Regular",
-    color: Colors.textSecondary,
-  },
-  useBtn: {
+  confirmBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    backgroundColor: Colors.taken,
-    borderRadius: 14,
-    height: 52,
-    shadowColor: Colors.taken,
+    gap: 10,
+    backgroundColor: Colors.primary,
+    borderRadius: 16,
+    height: 58,
+    marginBottom: 12,
+    shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 5,
   },
-  useBtnText: {
-    fontSize: 16,
+  confirmBtnText: {
+    fontSize: 19,
     fontFamily: "Nunito_700Bold",
     color: "#fff",
   },
   retryBtn: {
+    flexDirection: "row",
     alignItems: "center",
-    padding: 12,
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: Colors.primaryLight,
+    borderRadius: 14,
+    height: 52,
+    borderWidth: 1.5,
+    borderColor: Colors.primary + "40",
   },
   retryBtnText: {
-    fontSize: 15,
-    fontFamily: "Nunito_600SemiBold",
-    color: Colors.textSecondary,
+    fontSize: 17,
+    fontFamily: "Nunito_700Bold",
+    color: Colors.primary,
   },
   webFallback: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     padding: 32,
-    gap: 12,
+    gap: 16,
   },
   webFallbackTitle: {
-    fontSize: 22,
-    fontFamily: "Nunito_700Bold",
+    fontSize: 24,
+    fontFamily: "Nunito_800ExtraBold",
     color: Colors.text,
+    textAlign: "center",
   },
   webFallbackText: {
-    fontSize: 15,
+    fontSize: 17,
     fontFamily: "Nunito_400Regular",
     color: Colors.textSecondary,
     textAlign: "center",
-    lineHeight: 22,
+    lineHeight: 26,
   },
   backBtn: {
     backgroundColor: Colors.primary,
-    borderRadius: 12,
-    paddingHorizontal: 28,
-    paddingVertical: 12,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
     marginTop: 8,
   },
   backBtnText: {
-    fontSize: 16,
+    fontSize: 17,
     fontFamily: "Nunito_700Bold",
     color: "#fff",
   },

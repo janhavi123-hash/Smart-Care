@@ -34,10 +34,7 @@ const DURATION_OPTIONS = [
   { label: "14 Days", days: 14 },
   { label: "30 Days", days: 30 },
   { label: "90 Days", days: 90 },
-  { label: "Custom", days: -1 },
 ];
-
-const DOSAGE_OPTIONS = ["1 tablet", "2 tablets", "5 mg", "10 mg", "25 mg", "50 mg", "100 mg", "200 mg", "500 mg", "1 capsule", "2 capsules", "5 ml", "10 ml", "15 ml"];
 
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => i);
 const MIN_OPTIONS = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
@@ -58,7 +55,6 @@ export default function AddMedicineScreen() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
-  const [showDosagePicker, setShowDosagePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [showDurationPicker, setShowDurationPicker] = useState(false);
 
@@ -72,13 +68,17 @@ export default function AddMedicineScreen() {
       setError("Medicine name is required");
       return;
     }
+    if (!dosage.trim()) {
+      setError("Dosage is required");
+      return;
+    }
     setError("");
     setIsLoading(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       await addMedicine({
         name: name.trim(),
-        dosage,
+        dosage: dosage.trim(),
         time: timeStr,
         startDate,
         endDate,
@@ -103,12 +103,9 @@ export default function AddMedicineScreen() {
   }
 
   function selectDuration(days: number) {
-    if (days === -1) {
-      setShowDurationPicker(false);
-      return;
-    }
     setEndDate(addDays(startDate, days));
     setShowDurationPicker(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }
 
   return (
@@ -131,14 +128,14 @@ export default function AddMedicineScreen() {
       >
         {error ? (
           <View style={styles.errorBox}>
-            <Ionicons name="alert-circle" size={18} color={Colors.danger} />
+            <Ionicons name="alert-circle" size={20} color={Colors.danger} />
             <Text style={styles.errorText}>{error}</Text>
           </View>
         ) : null}
 
         {success ? (
           <View style={styles.successBox}>
-            <Ionicons name="checkmark-circle" size={18} color={Colors.taken} />
+            <Ionicons name="checkmark-circle" size={20} color={Colors.taken} />
             <Text style={styles.successText}>Medicine added successfully!</Text>
           </View>
         ) : null}
@@ -152,32 +149,27 @@ export default function AddMedicineScreen() {
             onChangeText={setName}
             autoCapitalize="words"
           />
-          <View style={styles.scanRow}>
-            <Pressable
-              style={styles.scanBtn}
-              onPress={() => router.push("/scan/barcode")}
-            >
-              <Ionicons name="barcode-outline" size={20} color={Colors.primary} />
-              <Text style={styles.scanBtnText}>Scan Barcode</Text>
-            </Pressable>
-            <Pressable
-              style={styles.scanBtn}
-              onPress={() => router.push("/scan/ocr")}
-            >
-              <Ionicons name="scan-outline" size={20} color={Colors.primary} />
-              <Text style={styles.scanBtnText}>Scan Text</Text>
-            </Pressable>
-          </View>
+          <Pressable
+            style={({ pressed }) => [styles.scanBtn, pressed && { opacity: 0.85 }]}
+            onPress={() => router.push("/scan/ocr")}
+          >
+            <Ionicons name="scan-outline" size={22} color={Colors.primary} />
+            <Text style={styles.scanBtnText}>Scan Medicine Label (AI)</Text>
+          </Pressable>
         </SectionCard>
 
         <SectionCard title="Dosage" icon="flask-outline">
-          <Pressable
-            style={styles.selectRow}
-            onPress={() => setShowDosagePicker(true)}
-          >
-            <Text style={styles.selectText}>{dosage}</Text>
-            <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
-          </Pressable>
+          <TextInput
+            style={styles.textInput}
+            placeholder="e.g. 1 tablet, 1/2 tablet, 5 ml, 500 mg"
+            placeholderTextColor={Colors.textTertiary}
+            value={dosage}
+            onChangeText={setDosage}
+            autoCapitalize="none"
+          />
+          <Text style={styles.dosageHint}>
+            You can write any dose: 1 tablet, 1/2 tablet, 2 capsules, 10 ml, etc.
+          </Text>
         </SectionCard>
 
         <SectionCard title="Reminder Time" icon="alarm-outline">
@@ -186,18 +178,31 @@ export default function AddMedicineScreen() {
             onPress={() => setShowTimePicker(true)}
           >
             <Text style={styles.selectText}>{displayTime}</Text>
-            <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
+            <Ionicons name="chevron-down" size={22} color={Colors.textSecondary} />
           </Pressable>
         </SectionCard>
 
         <SectionCard title="Duration" icon="calendar-outline">
-          <Pressable
-            style={[styles.selectRow, { marginBottom: 8 }]}
-            onPress={() => setShowDurationPicker(true)}
-          >
-            <Text style={styles.selectText}>Quick Select</Text>
-            <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
-          </Pressable>
+          <View style={styles.durationQuickRow}>
+            {DURATION_OPTIONS.map((opt) => (
+              <Pressable
+                key={opt.label}
+                style={({ pressed }) => [
+                  styles.durationChip,
+                  endDate === addDays(startDate, opt.days) && styles.durationChipActive,
+                  pressed && { opacity: 0.8 },
+                ]}
+                onPress={() => selectDuration(opt.days)}
+              >
+                <Text style={[
+                  styles.durationChipText,
+                  endDate === addDays(startDate, opt.days) && styles.durationChipTextActive,
+                ]}>
+                  {opt.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
           <View style={styles.dateRow}>
             <View style={styles.dateField}>
               <Text style={styles.dateLabel}>Start Date</Text>
@@ -209,7 +214,7 @@ export default function AddMedicineScreen() {
                 placeholderTextColor={Colors.textTertiary}
               />
             </View>
-            <Ionicons name="arrow-forward" size={16} color={Colors.textTertiary} style={{ marginTop: 20 }} />
+            <Ionicons name="arrow-forward" size={18} color={Colors.textTertiary} style={{ marginTop: 20 }} />
             <View style={styles.dateField}>
               <Text style={styles.dateLabel}>End Date</Text>
               <TextInput
@@ -251,7 +256,7 @@ export default function AddMedicineScreen() {
             <ActivityIndicator color="#fff" />
           ) : (
             <>
-              <Ionicons name="save-outline" size={20} color="#fff" />
+              <Ionicons name="save-outline" size={22} color="#fff" />
               <Text style={styles.saveBtnText}>Save Medicine</Text>
             </>
           )}
@@ -260,33 +265,9 @@ export default function AddMedicineScreen() {
         <View style={{ height: insets.bottom + (Platform.OS === "web" ? 34 : 0) + 40 }} />
       </ScrollView>
 
-      <Modal visible={showDosagePicker} transparent animationType="slide">
-        <Pressable style={styles.modalOverlay} onPress={() => setShowDosagePicker(false)}>
-          <View style={styles.pickerSheet}>
-            <View style={styles.pickerHandle} />
-            <Text style={styles.pickerTitle}>Select Dosage</Text>
-            <FlatList
-              data={DOSAGE_OPTIONS}
-              keyExtractor={(item) => item}
-              renderItem={({ item }) => (
-                <Pressable
-                  style={[styles.pickerItem, dosage === item && styles.pickerItemActive]}
-                  onPress={() => { setDosage(item); setShowDosagePicker(false); }}
-                >
-                  <Text style={[styles.pickerItemText, dosage === item && styles.pickerItemTextActive]}>
-                    {item}
-                  </Text>
-                  {dosage === item && <Ionicons name="checkmark" size={18} color={Colors.primary} />}
-                </Pressable>
-              )}
-            />
-          </View>
-        </Pressable>
-      </Modal>
-
       <Modal visible={showTimePicker} transparent animationType="slide">
         <Pressable style={styles.modalOverlay} onPress={() => setShowTimePicker(false)}>
-          <View style={styles.pickerSheet}>
+          <Pressable style={styles.pickerSheet} onPress={() => {}}>
             <View style={styles.pickerHandle} />
             <Text style={styles.pickerTitle}>Select Time</Text>
             <View style={styles.timePickerRow}>
@@ -295,7 +276,7 @@ export default function AddMedicineScreen() {
                 <FlatList
                   data={HOUR_OPTIONS}
                   keyExtractor={(item) => item.toString()}
-                  style={{ maxHeight: 200 }}
+                  style={{ maxHeight: 220 }}
                   renderItem={({ item }) => {
                     const active = timeHour === item;
                     const lbl = item % 12 === 0 ? 12 : item % 12;
@@ -318,7 +299,7 @@ export default function AddMedicineScreen() {
                 <FlatList
                   data={MIN_OPTIONS}
                   keyExtractor={(item) => item.toString()}
-                  style={{ maxHeight: 200 }}
+                  style={{ maxHeight: 220 }}
                   renderItem={({ item }) => {
                     const active = timeMin === item;
                     return (
@@ -341,26 +322,7 @@ export default function AddMedicineScreen() {
             >
               <Text style={styles.pickerDoneText}>Done</Text>
             </Pressable>
-          </View>
-        </Pressable>
-      </Modal>
-
-      <Modal visible={showDurationPicker} transparent animationType="slide">
-        <Pressable style={styles.modalOverlay} onPress={() => setShowDurationPicker(false)}>
-          <View style={styles.pickerSheet}>
-            <View style={styles.pickerHandle} />
-            <Text style={styles.pickerTitle}>Select Duration</Text>
-            {DURATION_OPTIONS.map((opt) => (
-              <Pressable
-                key={opt.label}
-                style={styles.pickerItem}
-                onPress={() => selectDuration(opt.days)}
-              >
-                <Text style={styles.pickerItemText}>{opt.label}</Text>
-                <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
-              </Pressable>
-            ))}
-          </View>
+          </Pressable>
         </Pressable>
       </Modal>
     </View>
@@ -371,7 +333,7 @@ function SectionCard({ title, icon, children }: { title: string; icon: string; c
   return (
     <View style={styles.sectionCard}>
       <View style={styles.sectionCardHeader}>
-        <Ionicons name={icon as any} size={18} color={Colors.primary} />
+        <Ionicons name={icon as any} size={20} color={Colors.primary} />
         <Text style={styles.sectionCardTitle}>{title}</Text>
       </View>
       {children}
@@ -389,12 +351,12 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.borderLight,
   },
   headerTitle: {
-    fontSize: 26,
+    fontSize: 30,
     fontFamily: "Nunito_800ExtraBold",
     color: Colors.text,
   },
   headerSubtitle: {
-    fontSize: 14,
+    fontSize: 16,
     fontFamily: "Nunito_400Regular",
     color: Colors.textSecondary,
     marginTop: 2,
@@ -406,11 +368,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: Colors.dangerLight,
     borderRadius: 12,
-    padding: 12,
-    gap: 8,
+    padding: 14,
+    gap: 10,
   },
   errorText: {
-    fontSize: 14,
+    fontSize: 16,
     fontFamily: "Nunito_600SemiBold",
     color: Colors.danger,
     flex: 1,
@@ -420,11 +382,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: Colors.successLight,
     borderRadius: 12,
-    padding: 12,
-    gap: 8,
+    padding: 14,
+    gap: 10,
   },
   successText: {
-    fontSize: 14,
+    fontSize: 16,
     fontFamily: "Nunito_600SemiBold",
     color: Colors.taken,
     flex: 1,
@@ -443,10 +405,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    marginBottom: 12,
+    marginBottom: 14,
   },
   sectionCardTitle: {
-    fontSize: 15,
+    fontSize: 18,
     fontFamily: "Nunito_700Bold",
     color: Colors.text,
   },
@@ -456,32 +418,33 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: Colors.border,
     paddingHorizontal: 14,
-    height: 48,
-    fontSize: 16,
+    height: 54,
+    fontSize: 18,
     fontFamily: "Nunito_400Regular",
     color: Colors.text,
     marginBottom: 10,
   },
-  scanRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
   scanBtn: {
-    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
+    gap: 8,
     backgroundColor: Colors.primaryLight,
     borderRadius: 12,
     borderWidth: 1.5,
     borderColor: Colors.primary + "40",
-    paddingVertical: 10,
+    paddingVertical: 12,
   },
   scanBtnText: {
-    fontSize: 13,
+    fontSize: 16,
     fontFamily: "Nunito_700Bold",
     color: Colors.primary,
+  },
+  dosageHint: {
+    fontSize: 14,
+    fontFamily: "Nunito_400Regular",
+    color: Colors.textSecondary,
+    marginTop: 4,
   },
   selectRow: {
     flexDirection: "row",
@@ -492,12 +455,38 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: Colors.border,
     paddingHorizontal: 14,
-    height: 48,
+    height: 54,
   },
   selectText: {
-    fontSize: 16,
+    fontSize: 18,
     fontFamily: "Nunito_400Regular",
     color: Colors.text,
+  },
+  durationQuickRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 16,
+  },
+  durationChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 24,
+    backgroundColor: Colors.borderLight,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+  },
+  durationChipActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  durationChipText: {
+    fontSize: 16,
+    fontFamily: "Nunito_700Bold",
+    color: Colors.textSecondary,
+  },
+  durationChipTextActive: {
+    color: "#fff",
   },
   dateRow: {
     flexDirection: "row",
@@ -506,10 +495,10 @@ const styles = StyleSheet.create({
   },
   dateField: { flex: 1 },
   dateLabel: {
-    fontSize: 12,
+    fontSize: 14,
     fontFamily: "Nunito_600SemiBold",
     color: Colors.textSecondary,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   dateInput: {
     backgroundColor: Colors.borderLight,
@@ -517,8 +506,8 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: Colors.border,
     paddingHorizontal: 10,
-    height: 44,
-    fontSize: 14,
+    height: 48,
+    fontSize: 16,
     fontFamily: "Nunito_400Regular",
     color: Colors.text,
   },
@@ -528,12 +517,12 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   alarmLabel: {
-    fontSize: 16,
+    fontSize: 18,
     fontFamily: "Nunito_700Bold",
     color: Colors.text,
   },
   alarmSub: {
-    fontSize: 13,
+    fontSize: 15,
     fontFamily: "Nunito_400Regular",
     color: Colors.textSecondary,
     marginTop: 2,
@@ -545,7 +534,7 @@ const styles = StyleSheet.create({
     gap: 8,
     backgroundColor: Colors.primary,
     borderRadius: 16,
-    height: 56,
+    height: 60,
     shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
@@ -556,7 +545,7 @@ const styles = StyleSheet.create({
   saveBtnPressed: { opacity: 0.88, transform: [{ scale: 0.98 }] },
   saveBtnDisabled: { opacity: 0.6 },
   saveBtnText: {
-    fontSize: 17,
+    fontSize: 19,
     fontFamily: "Nunito_700Bold",
     color: "#fff",
   },
@@ -570,40 +559,21 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 20,
-    maxHeight: "70%",
+    maxHeight: "75%",
   },
   pickerHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
+    width: 44,
+    height: 5,
+    borderRadius: 3,
     backgroundColor: Colors.border,
     alignSelf: "center",
     marginBottom: 16,
   },
   pickerTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontFamily: "Nunito_800ExtraBold",
     color: Colors.text,
-    marginBottom: 12,
-  },
-  pickerItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 14,
-    paddingHorizontal: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
-  },
-  pickerItemActive: { backgroundColor: Colors.primaryLight, borderRadius: 10 },
-  pickerItemText: {
-    fontSize: 16,
-    fontFamily: "Nunito_400Regular",
-    color: Colors.text,
-  },
-  pickerItemTextActive: {
-    fontFamily: "Nunito_700Bold",
-    color: Colors.primary,
+    marginBottom: 14,
   },
   timePickerRow: {
     flexDirection: "row",
@@ -611,21 +581,21 @@ const styles = StyleSheet.create({
   },
   timeColumn: { flex: 1 },
   timeColumnLabel: {
-    fontSize: 13,
+    fontSize: 15,
     fontFamily: "Nunito_700Bold",
     color: Colors.textSecondary,
     marginBottom: 8,
     textAlign: "center",
   },
   timeItem: {
-    paddingVertical: 10,
+    paddingVertical: 12,
     alignItems: "center",
-    borderRadius: 8,
+    borderRadius: 10,
     marginBottom: 4,
   },
   timeItemActive: { backgroundColor: Colors.primaryLight },
   timeItemText: {
-    fontSize: 15,
+    fontSize: 17,
     fontFamily: "Nunito_400Regular",
     color: Colors.text,
   },
@@ -635,14 +605,14 @@ const styles = StyleSheet.create({
   },
   pickerDoneBtn: {
     backgroundColor: Colors.primary,
-    borderRadius: 12,
-    height: 48,
+    borderRadius: 14,
+    height: 54,
     alignItems: "center",
     justifyContent: "center",
     marginTop: 16,
   },
   pickerDoneText: {
-    fontSize: 16,
+    fontSize: 18,
     fontFamily: "Nunito_700Bold",
     color: "#fff",
   },

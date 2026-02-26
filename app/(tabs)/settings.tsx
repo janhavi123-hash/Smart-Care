@@ -8,8 +8,9 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
+  Linking,
 } from "react-native";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -18,9 +19,31 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useMedicine } from "@/contexts/MedicineContext";
 import { Colors } from "@/constants/colors";
 
+function buildSmsUrl(phone: string, message: string): string {
+  const encoded = encodeURIComponent(message);
+  if (Platform.OS === "ios") {
+    return `sms:${phone}&body=${encoded}`;
+  }
+  return `sms:${phone}?body=${encoded}`;
+}
+
+async function openSMS(phone: string, message: string): Promise<boolean> {
+  try {
+    const url = buildSmsUrl(phone, message);
+    const supported = await Linking.canOpenURL(url);
+    if (supported) {
+      await Linking.openURL(url);
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 export default function SettingsScreen() {
   const { user, logout, updateProfile } = useAuth();
-  const { medicines, deleteMedicine } = useMedicine();
+  const { medicines, deleteMedicine, getWeeklyMissedCount } = useMedicine();
   const insets = useSafeAreaInsets();
 
   const [name, setName] = useState(user?.name ?? "");
@@ -28,6 +51,45 @@ export default function SettingsScreen() {
   const [caregiverPhone, setCaregiverPhone] = useState(user?.caregiverPhone ?? "");
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  const weeklyMissed = getWeeklyMissedCount();
+  const hasCaregiverPhone = !!(user?.caregiverPhone);
+
+  useEffect(() => {
+    if (weeklyMissed >= 3 && hasCaregiverPhone && user?.caregiverPhone) {
+      const alertKey = `smartcare_weekly_alert_${new Date().toISOString().split("T")[0].slice(0, 7)}`;
+      const alreadyShown = (global as any)[alertKey];
+      if (!alreadyShown) {
+        (global as any)[alertKey] = true;
+        const msg = buildWeeklyMissedMessage(user.name, user.caregiverName ?? "Caregiver", weeklyMissed);
+        Alert.alert(
+          "Missed Dose Alert",
+          `${weeklyMissed} doses have been missed this week. Would you like to notify ${user.caregiverName || "your caregiver"}?`,
+          [
+            { text: "Not Now", style: "cancel" },
+            {
+              text: "Send SMS",
+              onPress: async () => {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                const sent = await openSMS(user.caregiverPhone!, msg);
+                if (!sent) {
+                  Alert.alert("Cannot Open SMS", "Please check that an SMS app is available on your device.");
+                }
+              },
+            },
+          ]
+        );
+      }
+    }
+  }, [weeklyMissed]);
+
+  function buildWeeklyMissedMessage(patientName: string, cName: string, count: number): string {
+    return `Dear ${cName},\n\nThis is an automated health alert from SmartCare. Your care recipient, ${patientName || "your patient"}, has missed ${count} scheduled medication dose${count !== 1 ? "s" : ""} this week.\n\nMissing multiple doses can impact their health and treatment outcomes. We kindly request that you check in with them at your earliest convenience to ensure they remain on track with their medication schedule.\n\nThank you for your care and support.\n\n— SmartCare App`;
+  }
+
+  function buildEmergencyMessage(patientName: string): string {
+    return `EMERGENCY ALERT from SmartCare\n\nDear Caregiver,\n\n${patientName || "Your care recipient"} requires immediate assistance. Please check on them right away.\n\nThis alert was sent via SmartCare medication reminder app.\n\nPlease respond urgently.`;
+  }
 
   async function handleSave() {
     if (!name.trim()) return;
@@ -93,6 +155,47 @@ export default function SettingsScreen() {
     );
   }
 
+  async function handleEmergencyAlert() {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    const phone = user?.caregiverPhone ?? "";
+    const msg = buildEmergencyMessage(user?.name ?? "");
+    if (!phone) {
+      Alert.alert("No Caregiver Phone", "Please add a caregiver phone number in the fields above and save.");
+      return;
+    }
+
+    if (Platform.OS === "web") {
+      Alert.alert(
+        "Emergency Alert",
+        `On mobile, this would open SMS to ${user?.caregiverName || "caregiver"} (${phone}) with an emergency message.`,
+        [{ text: "OK" }]
+      );
+      return;
+    }
+
+    Alert.alert(
+      "Send Emergency Alert",
+      `This will open your SMS app with an emergency message to ${user?.caregiverName || "your caregiver"} at ${phone}.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Open SMS",
+          style: "destructive",
+          onPress: async () => {
+            const sent = await openSMS(phone, msg);
+            if (!sent) {
+              Alert.alert(
+                "Cannot Open SMS",
+                "Your device does not support SMS or no SMS app is installed.",
+                [{ text: "OK" }]
+              );
+            }
+          },
+        },
+      ]
+    );
+  }
+
   return (
     <View style={styles.container}>
       <View
@@ -122,6 +225,15 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {weeklyMissed >= 3 && (
+          <View style={styles.warningBanner}>
+            <Ionicons name="warning" size={22} color="#fff" />
+            <Text style={styles.warningBannerText}>
+              {weeklyMissed} doses missed this week — consider alerting your caregiver
+            </Text>
+          </View>
+        )}
+
         <SectionHeader title="Profile" icon="person-outline" />
         <View style={styles.card}>
           <FieldRow label="Full Name" icon="person-outline">
@@ -138,7 +250,7 @@ export default function SettingsScreen() {
 
         <SectionHeader title="Caregiver" icon="heart-outline" />
         <View style={styles.card}>
-          <FieldRow label="Caregiver Name" icon="person-add-outline">
+          <FieldRow label="Name" icon="person-add-outline">
             <TextInput
               style={styles.fieldInput}
               value={caregiverName}
@@ -149,39 +261,40 @@ export default function SettingsScreen() {
             />
           </FieldRow>
           <View style={styles.divider} />
-          <FieldRow label="Phone Number" icon="call-outline">
+          <FieldRow label="Phone" icon="call-outline">
             <TextInput
               style={styles.fieldInput}
               value={caregiverPhone}
               onChangeText={setCaregiverPhone}
-              placeholder="+1 (555) 000-0000"
+              placeholder="+1 555 000 0000"
               placeholderTextColor={Colors.textTertiary}
               keyboardType="phone-pad"
             />
           </FieldRow>
         </View>
 
-        {user?.caregiverPhone ? (
+        {(user?.caregiverPhone || caregiverPhone) ? (
           <View style={styles.emergencyCard}>
             <View style={styles.emergencyHeader}>
-              <Ionicons name="warning" size={18} color={Colors.danger} />
+              <Ionicons name="warning" size={22} color={Colors.danger} />
               <Text style={styles.emergencyTitle}>Emergency Contact</Text>
             </View>
             <Text style={styles.emergencyText}>
-              In an emergency, tap the button below to send an SMS alert to {user.caregiverName || "your caregiver"} at {user.caregiverPhone}.
+              Tap the button below to send an emergency SMS to{" "}
+              <Text style={{ fontFamily: "Nunito_700Bold" }}>
+                {user?.caregiverName || caregiverName || "your caregiver"}
+              </Text>
+              {" "}at{" "}
+              <Text style={{ fontFamily: "Nunito_700Bold" }}>
+                {user?.caregiverPhone || caregiverPhone}
+              </Text>
+              . This will open your SMS app with a pre-filled urgent message.
             </Text>
             <Pressable
               style={({ pressed }) => [styles.emergencyBtn, pressed && { opacity: 0.85 }]}
-              onPress={() => {
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-                Alert.alert(
-                  "Emergency Alert",
-                  `SMS would be sent to ${user.caregiverName || "caregiver"} at ${user.caregiverPhone}: "Emergency: Please check on me immediately. - SmartCare App"`,
-                  [{ text: "OK" }]
-                );
-              }}
+              onPress={handleEmergencyAlert}
             >
-              <Ionicons name="warning" size={18} color="#fff" />
+              <Ionicons name="warning" size={22} color="#fff" />
               <Text style={styles.emergencyBtnText}>Send Emergency Alert</Text>
             </Pressable>
           </View>
@@ -200,12 +313,12 @@ export default function SettingsScreen() {
             <ActivityIndicator color="#fff" />
           ) : saved ? (
             <>
-              <Ionicons name="checkmark-circle" size={20} color="#fff" />
+              <Ionicons name="checkmark-circle" size={22} color="#fff" />
               <Text style={styles.saveBtnText}>Saved!</Text>
             </>
           ) : (
             <>
-              <Ionicons name="save-outline" size={20} color="#fff" />
+              <Ionicons name="save-outline" size={22} color="#fff" />
               <Text style={styles.saveBtnText}>Save Changes</Text>
             </>
           )}
@@ -227,7 +340,7 @@ export default function SettingsScreen() {
                       onPress={() => handleDeleteMedicine(med.id, med.name)}
                       style={styles.deleteBtn}
                     >
-                      <Ionicons name="trash-outline" size={18} color={Colors.danger} />
+                      <Ionicons name="trash-outline" size={20} color={Colors.danger} />
                     </Pressable>
                   </View>
                 </View>
@@ -240,7 +353,7 @@ export default function SettingsScreen() {
           style={({ pressed }) => [styles.logoutBtn, pressed && { opacity: 0.85 }]}
           onPress={handleLogout}
         >
-          <Ionicons name="log-out-outline" size={20} color={Colors.danger} />
+          <Ionicons name="log-out-outline" size={22} color={Colors.danger} />
           <Text style={styles.logoutText}>Sign Out</Text>
         </Pressable>
 
@@ -253,7 +366,7 @@ export default function SettingsScreen() {
 function SectionHeader({ title, icon }: { title: string; icon: string }) {
   return (
     <View style={styles.sectionHeader}>
-      <Ionicons name={icon as any} size={15} color={Colors.textSecondary} />
+      <Ionicons name={icon as any} size={16} color={Colors.textSecondary} />
       <Text style={styles.sectionHeaderText}>{title.toUpperCase()}</Text>
     </View>
   );
@@ -263,7 +376,7 @@ function FieldRow({ label, icon, children }: { label: string; icon: string; chil
   return (
     <View style={styles.fieldRow}>
       <View style={styles.fieldLeft}>
-        <Ionicons name={icon as any} size={18} color={Colors.textSecondary} />
+        <Ionicons name={icon as any} size={20} color={Colors.textSecondary} />
         <Text style={styles.fieldLabel}>{label}</Text>
       </View>
       <View style={styles.fieldRight}>{children}</View>
@@ -281,12 +394,12 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.borderLight,
   },
   headerTitle: {
-    fontSize: 26,
+    fontSize: 30,
     fontFamily: "Nunito_800ExtraBold",
     color: Colors.text,
   },
   headerSubtitle: {
-    fontSize: 14,
+    fontSize: 16,
     fontFamily: "Nunito_400Regular",
     color: Colors.textSecondary,
     marginTop: 2,
@@ -311,28 +424,43 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   profileAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 62,
+    height: 62,
+    borderRadius: 31,
     backgroundColor: Colors.primaryLight,
     alignItems: "center",
     justifyContent: "center",
   },
   profileAvatarText: {
-    fontSize: 26,
+    fontSize: 28,
     fontFamily: "Nunito_800ExtraBold",
     color: Colors.primary,
   },
   profileName: {
-    fontSize: 18,
+    fontSize: 20,
     fontFamily: "Nunito_700Bold",
     color: Colors.text,
   },
   profileEmail: {
-    fontSize: 14,
+    fontSize: 15,
     fontFamily: "Nunito_400Regular",
     color: Colors.textSecondary,
     marginTop: 2,
+  },
+  warningBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: Colors.danger,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 4,
+  },
+  warningBannerText: {
+    flex: 1,
+    fontSize: 16,
+    fontFamily: "Nunito_700Bold",
+    color: "#fff",
   },
   sectionHeader: {
     flexDirection: "row",
@@ -343,7 +471,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   sectionHeaderText: {
-    fontSize: 12,
+    fontSize: 14,
     fontFamily: "Nunito_700Bold",
     color: Colors.textSecondary,
     letterSpacing: 0.8,
@@ -367,27 +495,27 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: 14,
+    padding: 16,
     gap: 8,
   },
   fieldLeft: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    minWidth: 130,
+    minWidth: 100,
   },
   fieldLabel: {
-    fontSize: 15,
+    fontSize: 17,
     fontFamily: "Nunito_600SemiBold",
     color: Colors.text,
   },
   fieldRight: { flex: 1, alignItems: "flex-end" },
   fieldInput: {
-    fontSize: 15,
+    fontSize: 17,
     fontFamily: "Nunito_400Regular",
     color: Colors.text,
     textAlign: "right",
-    minWidth: 120,
+    minWidth: 130,
   },
   emergencyCard: {
     backgroundColor: Colors.dangerLight,
@@ -396,7 +524,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.danger + "30",
     marginTop: 8,
-    gap: 10,
+    gap: 12,
   },
   emergencyHeader: {
     flexDirection: "row",
@@ -404,27 +532,27 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   emergencyTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontFamily: "Nunito_700Bold",
     color: Colors.danger,
   },
   emergencyText: {
-    fontSize: 14,
+    fontSize: 16,
     fontFamily: "Nunito_400Regular",
     color: Colors.text,
-    lineHeight: 20,
+    lineHeight: 24,
   },
   emergencyBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 10,
     backgroundColor: Colors.danger,
-    borderRadius: 12,
-    padding: 12,
+    borderRadius: 14,
+    padding: 16,
   },
   emergencyBtnText: {
-    fontSize: 15,
+    fontSize: 18,
     fontFamily: "Nunito_700Bold",
     color: "#fff",
   },
@@ -435,7 +563,7 @@ const styles = StyleSheet.create({
     gap: 8,
     backgroundColor: Colors.primary,
     borderRadius: 14,
-    height: 52,
+    height: 58,
     marginTop: 8,
     shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 4 },
@@ -444,7 +572,7 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   saveBtnText: {
-    fontSize: 16,
+    fontSize: 18,
     fontFamily: "Nunito_700Bold",
     color: "#fff",
   },
@@ -452,16 +580,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: 14,
+    padding: 16,
   },
   medLeft: { flex: 1 },
   medName: {
-    fontSize: 16,
+    fontSize: 18,
     fontFamily: "Nunito_700Bold",
     color: Colors.text,
   },
   medDetails: {
-    fontSize: 13,
+    fontSize: 15,
     fontFamily: "Nunito_400Regular",
     color: Colors.textSecondary,
     marginTop: 2,
@@ -476,13 +604,13 @@ const styles = StyleSheet.create({
     gap: 8,
     backgroundColor: Colors.dangerLight,
     borderRadius: 14,
-    height: 52,
+    height: 56,
     marginTop: 16,
     borderWidth: 1,
     borderColor: Colors.danger + "30",
   },
   logoutText: {
-    fontSize: 16,
+    fontSize: 18,
     fontFamily: "Nunito_700Bold",
     color: Colors.danger,
   },

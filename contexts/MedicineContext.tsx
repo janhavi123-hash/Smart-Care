@@ -57,6 +57,7 @@ interface MedicineContextValue {
   getWeeklyAdherence: () => { date: string; adherence: number }[];
   getMissedCount: () => number;
   getTakenCount: () => number;
+  getWeeklyMissedCount: () => number;
   refreshLogs: () => Promise<void>;
 }
 
@@ -329,6 +330,16 @@ export function MedicineProvider({ children }: { children: ReactNode }) {
     return logs.filter((l) => l.status === "taken").length;
   }, [logs]);
 
+  const getWeeklyMissedCount = useCallback((): number => {
+    const dates: string[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      dates.push(d.toISOString().split("T")[0]);
+    }
+    return logs.filter((l) => l.status === "missed" && dates.includes(l.date)).length;
+  }, [logs]);
+
   const value = useMemo(
     () => ({
       medicines,
@@ -344,6 +355,7 @@ export function MedicineProvider({ children }: { children: ReactNode }) {
       getWeeklyAdherence,
       getMissedCount,
       getTakenCount,
+      getWeeklyMissedCount,
       refreshLogs,
     }),
     [medicines, logs, isLoading],
