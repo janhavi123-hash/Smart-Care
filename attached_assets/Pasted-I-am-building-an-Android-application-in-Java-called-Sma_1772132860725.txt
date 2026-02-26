@@ -1,0 +1,95 @@
+I am building an Android application in Java called SmartCare – Elderly Medicine Reminder App.
+I want you to generate a complete Android project structure with clean architecture and elder-friendly UI.
+🎨 UI Design Requirements
+Design the UI similar to a modern medicine reminder dashboard:
+Home Screen should include:
+Top section:
+Greeting text (Good Morning)
+Current date
+A blue card showing:
+"Next Reminder"
+Countdown time (e.g., 58 min)
+Medicine Name
+Dosage
+Time
+"View Reminder" button
+Below that:
+"Today's Medications" title
+Medicine cards showing:
+Medicine Name
+Dosage
+Time
+Status button (Taken / Pending)
+Green for Taken
+Blue for Pending
+Bottom Navigation Bar:
+Home
+Add Medicine
+History
+Settings
+Design must be:
+Minimal
+Clean
+Rounded cards
+Soft shadows
+Large text
+Elder-friendly
+High contrast
+Simple fonts
+Do not clutter UI.
+📱 App Features Required
+1️⃣ Authentication
+Firebase Email/Password login
+Signup
+Store user profile
+2️⃣ Add Medicine Screen
+When user clicks Add Medicine:
+Include:
+Medicine Name (Manual Entry)
+Dosage
+Time Picker
+Start Date
+End Date
+Alarm Toggle
+Barcode Scan Button
+IMPORTANT: Barcode scanning should be inside Add Medicine screen only. Use Google ML Kit Barcode Scanning. After scanning, auto-fill medicine name.
+3️⃣ Reminder System
+Use AlarmManager
+Show notification at medicine time
+Mark as Taken / Missed
+If missed 3 times → trigger emergency SMS
+4️⃣ Caregiver Feature
+After login:
+User can:
+Add caregiver name
+Add caregiver phone number
+Update caregiver in Settings
+Emergency: If medicine missed multiple times OR user presses emergency button: Send SMS to caregiver: "Alert: Medicine missed. Please check immediately."
+5️⃣ Health Analytics
+Create simple charts using MPAndroidChart:
+Daily adherence %
+Weekly adherence %
+Missed vs Taken count
+Keep charts simple and readable.
+6️⃣ Settings
+Edit user name
+Edit caregiver details
+Logout
+Minimal settings screen.
+7.1️⃣ ADD OCR TEXT SCANNING (IMPORTANT UPGRADE)
+Remove barcode-only limitation.
+Add Text Recognition (OCR) using Google ML Kit.
+In Add Medicine screen:
+Add two buttons:
+Scan Barcode
+Scan Text from Strip
+When user clicks "Scan Text":
+Open camera
+Detect text from medicine strip
+Extract medicine name automatically
+Auto-fill Medicine Name field
+Logic:
+Extract largest bold text OR first detected line
+Trim extra symbols
+Allow user to edit before saving
+Add proper permissions handling.
