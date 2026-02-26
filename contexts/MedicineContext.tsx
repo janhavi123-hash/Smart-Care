@@ -8,8 +8,15 @@ import {
   ReactNode,
   useCallback,
 } from "react";
-import * as Crypto from "expo-crypto";
 import { useAuth } from "./AuthContext";
+
+function generateId(): string {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 export type MedicationStatus = "taken" | "missed" | "pending";
 
@@ -64,6 +71,58 @@ function getTodayStr() {
   return new Date().toISOString().split("T")[0];
 }
 
+async function syncLogsHelper(
+  meds: Medicine[],
+  existingLogs: MedicationLog[],
+  userId: string,
+): Promise<MedicationLog[]> {
+  const today = getTodayStr();
+  const now = new Date();
+  let changed = false;
+
+  const newLogs = existingLogs.map((log) => {
+    if (log.date === today && log.status === "pending") {
+      const [h, m] = log.scheduledTime.split(":").map(Number);
+      const scheduled = new Date();
+      scheduled.setHours(h, m, 0, 0);
+      if (now > scheduled) {
+        changed = true;
+        return { ...log, status: "missed" as const };
+      }
+    }
+    return log;
+  });
+
+  for (const med of meds) {
+    if (med.startDate <= today && med.endDate >= today) {
+      const has = newLogs.some(
+        (l) => l.medicineId === med.id && l.date === today,
+      );
+      if (!has) {
+        const [h, m] = med.time.split(":").map(Number);
+        const scheduled = new Date();
+        scheduled.setHours(h, m, 0, 0);
+        newLogs.push({
+          id: generateId(),
+          medicineId: med.id,
+          userId,
+          date: today,
+          status: now > scheduled ? "missed" : "pending",
+          scheduledTime: med.time,
+          medicineName: med.name,
+          dosage: med.dosage,
+        });
+        changed = true;
+      }
+    }
+  }
+
+  if (changed) {
+    await AsyncStorage.setItem(KEYS.LOGS(userId), JSON.stringify(newLogs));
+  }
+  return newLogs;
+}
+
 function getDatesBetween(start: string, end: string): string[] {
   const dates: string[] = [];
   const s = new Date(start);
@@ -93,6 +152,24 @@ export function MedicineProvider({ children }: { children: ReactNode }) {
     }
   }, [user]);
 
+  useEffect(() => {
+    if (!user) return;
+    const userId = user.id;
+    const interval = setInterval(async () => {
+      try {
+        const medsRaw = await AsyncStorage.getItem(KEYS.MEDICINES(userId));
+        const logsRaw = await AsyncStorage.getItem(KEYS.LOGS(userId));
+        const latestMeds: Medicine[] = medsRaw ? JSON.parse(medsRaw) : [];
+        const latestLogs: MedicationLog[] = logsRaw ? JSON.parse(logsRaw) : [];
+        const synced = await syncLogsHelper(latestMeds, latestLogs, userId);
+        setLogs(synced);
+      } catch (e) {
+        console.error("Auto-sync error", e);
+      }
+    }, 60 * 1000);
+    return () => clearInterval(interval);
+  }, [user?.id]);
+
   async function loadData() {
     if (!user) return;
     setIsLoading(true);
@@ -113,41 +190,13 @@ export function MedicineProvider({ children }: { children: ReactNode }) {
 
   async function syncLogsForToday(meds: Medicine[], existingLogs: MedicationLog[]): Promise<MedicationLog[]> {
     if (!user) return existingLogs;
-    const today = getTodayStr();
-    const newLogs = [...existingLogs];
-
-    for (const med of meds) {
-      if (med.startDate <= today && med.endDate >= today) {
-        const has = newLogs.some(
-          (l) => l.medicineId === med.id && l.date === today
-        );
-        if (!has) {
-          const now = new Date();
-          const [h, m] = med.time.split(":").map(Number);
-          const scheduled = new Date();
-          scheduled.setHours(h, m, 0, 0);
-          newLogs.push({
-            id: Crypto.randomUUID(),
-            medicineId: med.id,
-            userId: user.id,
-            date: today,
-            status: now > scheduled ? "missed" : "pending",
-            scheduledTime: med.time,
-            medicineName: med.name,
-            dosage: med.dosage,
-          });
-        }
-      }
-    }
-
-    await AsyncStorage.setItem(KEYS.LOGS(user.id), JSON.stringify(newLogs));
-    return newLogs;
+    return syncLogsHelper(meds, existingLogs, user.id);
   }
 
   async function refreshLogs() {
     if (!user) return;
-    const syncedLogs = await syncLogsForToday(medicines, logs);
-    setLogs(syncedLogs);
+    const synced = await syncLogsHelper(medicines, logs, user.id);
+    setLogs(synced);
   }
 
   async function saveMedicines(updated: Medicine[]) {
@@ -166,7 +215,7 @@ export function MedicineProvider({ children }: { children: ReactNode }) {
     if (!user) return;
     const med: Medicine = {
       ...data,
-      id: Crypto.randomUUID(),
+      id: generateId(),
       userId: user.id,
       createdAt: new Date().toISOString(),
     };
@@ -180,7 +229,7 @@ export function MedicineProvider({ children }: { children: ReactNode }) {
       const scheduled = new Date();
       scheduled.setHours(h, m, 0, 0);
       const newLog: MedicationLog = {
-        id: Crypto.randomUUID(),
+        id: generateId(),
         medicineId: med.id,
         userId: user.id,
         date: today,
