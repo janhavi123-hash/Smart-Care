@@ -1,26 +1,38 @@
 {
   "expo": {
-    "name": "My App",
-    "slug": "my-app",
+    "name": "SmartCare",
+    "slug": "smartcare-medicine-reminder",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "myapp",
-    "userInterfaceStyle": "automatic",
+    "scheme": "smartcare",
+    "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#1A6FE8"
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.myapp"
+      "bundleIdentifier": "com.myapp",
+      "infoPlist": {
+        "NSCameraUsageDescription": "SmartCare uses your camera to scan medicine barcodes and read text from medicine strips.",
+        "NSPhotoLibraryUsageDescription": "SmartCare accesses your photo library to scan medicine information."
+      }
     },
     "android": {
       "package": "com.myapp",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.SEND_SMS",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.USE_EXACT_ALARM",
+        "android.permission.SCHEDULE_EXACT_ALARM"
+      ],
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#1A6FE8",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
@@ -37,7 +49,20 @@
         }
       ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "SmartCare needs camera access to scan medicine barcodes and read text from medicine strips."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#1A6FE8"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
