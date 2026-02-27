@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "SmartCare",
-    "slug": "smartcare-medicine-reminder",
+    "slug": "smartcare-medicine-reminder-janhavi",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -29,7 +29,8 @@
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE",
         "android.permission.USE_EXACT_ALARM",
-        "android.permission.SCHEDULE_EXACT_ALARM"
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        "android.permission.RECORD_AUDIO"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#1A6FE8",
@@ -67,6 +68,14 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {
+        "origin": "https://replit.com/"
+      },
+      "eas": {
+        "projectId": "ee991918-d694-434e-9d04-d5419e164997"
+      }
     }
   }
 }
