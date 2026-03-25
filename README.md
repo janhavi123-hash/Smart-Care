@@ -8,8 +8,11 @@ SmartCare is a mobile application designed to help elderly people and patients m
 🎯 Objective of the App The main goal of SmartCare is to:
 
 -Help users manage their medicine schedule 
+
 -Track taken and missed doses
+
 -Notify caregivers when help is needed
+
 -Provide an emergency alert system 
 
 ---
