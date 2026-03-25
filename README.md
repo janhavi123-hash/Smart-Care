@@ -3,7 +3,10 @@ Smart-Care-app
 📱SmartCare – Medicine Reminder & Elderly Care App :
 ---
 SmartCare is a mobile application designed to help elderly people and patients manage their medicines properly. Many people forget to take medicines on time, which can affect their health. This app helps users schedule medicines, track doses, and notify caregivers in case of emergencies or missed medication.
+
+---
 🎯 Objective of the App The main goal of SmartCare is to:
+
 Help users manage their medicine schedule Track taken and missed doses Notify caregivers when help is needed Provide an emergency alert system 
 
 ---
