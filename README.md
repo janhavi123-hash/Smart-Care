@@ -5,7 +5,9 @@ Smart-Care-app
 SmartCare is a mobile application designed to help elderly people and patients manage their medicines properly. Many people forget to take medicines on time, which can affect their health. This app helps users schedule medicines, track doses, and notify caregivers in case of emergencies or missed medication.
 🎯 Objective of the App The main goal of SmartCare is to:
 Help users manage their medicine schedule Track taken and missed doses Notify caregivers when help is needed Provide an emergency alert system 
+
 🔑 Main Features 
+
 1️⃣ Medicine Schedule Management Users can add and manage their medicines by entering details like: Medicine name Dosage Time to take the medicine This helps users keep track of their daily medicines easily. 
 2️⃣ Missed Dose Tracking The app monitors whether the user has taken the medicine or not. If a medicine is not taken, it is marked as a missed dose. The system keeps track of all missed medicines. 
 3️⃣ Automatic Caregiver Alert (3 Missed Doses) SmartCare includes an automatic safety feature. If the user misses medicine three times, the app will: Automatically send a message/alert to the caregiver This helps family members know when the patient may need help.
